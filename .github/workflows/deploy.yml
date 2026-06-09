@@ -86,17 +86,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Download all WASM artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: wasm-*
           path: deploy/wasm/
       - name: Download host artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: host-build
           path: deploy/js/
       - name: Download site artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: site-build
           path: deploy/

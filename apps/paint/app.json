@@ -1,0 +1,12 @@
+{
+  "name": "Paint",
+  "id": "com.os.paint",
+  "version": "1.0.0",
+  "description": "Simple drawing application",
+  "entry": "paint.wex",
+  "icon": "/icons/paint.png",
+  "category": "Graphics",
+  "author": "WebOS Team",
+  "permissions": ["wm", "input", "gpu"],
+  "dependencies": []
+}

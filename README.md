@@ -1,517 +1,187 @@
-# WebOS - Modern Web-Based Operating System
+# WebOS
 
-<p align="center">
-  <strong>一个在浏览器中运行的完整操作系统</strong>
-</p>
+**基于 C/WebAssembly 的浏览器操作系统**
 
----
+WebOS 是一个运行在浏览器中的微型操作系统，完全基于 WebAssembly 构建。系统采用纯 C 语言编写内核、驱动和系统服务，用户态应用使用 C++ 开发，TypeScript 仅作为浏览器宿主入口层。
 
-## 项目概述
+## 核心设计原则
 
-WebOS 是一个基于 Web 技术构建的操作系统，采用 Monorepo 架构，使用 Bun 作为包管理器。项目支持两种运行方式：
+- **完全动态化**：无静态链接，所有模块运行时动态加载
+- **模块类型自描述**：通过 WebAssembly 自定义段 `module_type` 标识模块类型
+- **纯 C 系统**：Bootloader、内核、驱动、系统服务全部用 C 语言
+- **C++ 应用**：用户态应用使用 C++ 开发
+- **TypeScript 宿主**：仅作为浏览器入口，负责加载 bootloader.wex 并提供基础运行时桥接
 
-1. **独立模式** - 通过 Webpack 构建，直接运行 `packages/os/`
-2. **Next.js 集成模式** - 通过 Next.js 构建，运行 `site/`
-
----
-
-## 目录结构
+## 架构概览
 
 ```
-/home/z/my-project/
-│
-├── package.json                    # Monorepo 根配置
-├── bun.lock                        # Bun 锁文件
-├── tsconfig.json                   # TypeScript 配置
-├── eslint.config.js                # ESLint 配置
-│
-├── docs/                           # 📄 Markdown 文档
-│   ├── developer-plugin.md         # 开发者插件指南
-│   ├── THIRD-PARTY-APPS.md         # 第三方应用开发指南
-│   └── UI-FRAMEWORK.md             # UI 框架文档
-│
-├── site/                           # 🌐 Next.js 站点（主入口）
-│   ├── package.json
-│   ├── next.config.js              # 路径别名配置
-│   ├── tsconfig.json
-│   ├── public/
-│   │   ├── version.json            # 版本信息
-│   │   ├── sw.js                   # Service Worker
-│   │   └── favicon.svg
+┌─────────────────────────────────────┐
+│          用户应用 (C++ .wex)         │
+│   Calculator │ Paint │ Browser │ ... │
+├─────────────────────────────────────┤
+│         系统服务 (C .Wdll)           │
+│  窗口管理器 │ 文件系统 │ 网络 │ 商店   │
+├─────────────────────────────────────┤
+│         设备驱动 (C .Wdll)           │
+│   GPU │ 输入 │ 存储 │ 网络           │
+├─────────────────────────────────────┤
+│          内核 (C .wex)              │
+│  进程管理 │ 内存 │ IPC │ 系统调用     │
+├─────────────────────────────────────┤
+│         Bootloader (C .wex)         │
+│    GPU初始化 │ 加载内核 │ 传递控制     │
+├─────────────────────────────────────┤
+│       TypeScript 宿主 (浏览器入口)    │
+│  动态加载器 │ 运行时桥接 │ WebGPU      │
+├─────────────────────────────────────┤
+│          浏览器 (WebAssembly)        │
+└─────────────────────────────────────┘
+```
+
+## 文件类型规范
+
+| 后缀 | 含义 | 格式 | 加载行为 |
+|------|------|------|---------|
+| `.wex` | 可执行程序 | WASM + module_type="wex" | 实例化后调用 `_start` 或 `main` |
+| `.Wdll` | 动态链接库 | WASM + module_type="Wdll" | 实例化，缓存 exports |
+| `.wli` | 接口描述文件 | JSON | 不实例化，解析符号表 |
+| `.wasm` | 通用 WASM | 标准 WASM | 默认按 .Wdll 处理 |
+
+加载器识别优先级：读取文件 → 检查 WASM 魔数 → 解析自定义段 `module_type` → 若不存在，按 `.Wdll` 处理。
+
+## 项目结构
+
+```
+webos/
+├── host/                 # TypeScript 宿主（浏览器入口）
 │   └── src/
-│       └── app/
-│           ├── page.tsx            # / (重定向到 /intro)
-│           ├── intro/page.tsx      # /intro (介绍页面)
-│           ├── docs/page.tsx       # /docs (文档页面)
-│           ├── app/page.tsx        # /app (WebOS 系统)
-│           ├── layout.tsx          # 根布局
-│           ├── globals.css         # 全局样式
-│           └── WebOSApp.tsx        # WebOS 主组件
-│
-├── packages/                       # 📦 包目录
-│   │
-│   ├── os/                         # 🖥️ WebOS 核心系统
-│   │   ├── package.json            # @webos/os
-│   │   ├── webpack.config.js       # Webpack 配置（独立构建）
-│   │   ├── babel.config.json
-│   │   ├── global.d.ts
-│   │   │
-│   │   ├── src/                    # 主入口
-│   │   │   ├── index.tsx           # Webpack 入口（独立模式）
-│   │   │   └── index.html          # HTML 模板
-│   │   │
-│   │   ├── packages/               # 子包
-│   │   │   │
-│   │   │   ├── kernel/             # 🔧 内核
-│   │   │   │   ├── package.json    # @kernel
-│   │   │   │   └── src/
-│   │   │   │       ├── index.ts    # 导出入口
-│   │   │   │       ├── types.ts    # 类型定义
-│   │   │   │       │
-│   │   │   │       └── core/
-│   │   │   │           ├── api.ts              # window.webos API
-│   │   │   │           ├── windowManager.ts    # 窗口管理器
-│   │   │   │           ├── userManager.ts      # 用户管理
-│   │   │   │           ├── secureUserManager.ts # 安全用户管理
-│   │   │   │           ├── crypto.ts           # 加密工具
-│   │   │   │           ├── encryptedDatabase.ts # 加密数据库
-│   │   │   │           ├── secureStorage.ts    # 安全存储
-│   │   │   │           ├── resourceLoader.ts   # 资源加载
-│   │   │   │           ├── errorHandler.ts     # 错误处理
-│   │   │   │           │
-│   │   │   │           └── managers/
-│   │   │   │               ├── i18nManager.ts    # 国际化管理
-│   │   │   │               ├── timeManager.ts    # 时间管理
-│   │   │   │               ├── configManager.ts  # 配置管理
-│   │   │   │               ├── updateManager.ts  # 更新管理
-│   │   │   │               ├── bootManager.ts    # 启动管理
-│   │   │   │               └── notifyManager.ts   # 通知管理
-│   │   │   │
-│   │   │   ├── kernel/fs/           # 📁 文件系统
-│   │   │   │   ├── package.json
-│   │   │   │   └── src/
-│   │   │   │       ├── index.ts
-│   │   │   │       ├── types.ts
-│   │   │   │       └── core/
-│   │   │   │           ├── FileSystem.ts    # 文件系统实现
-│   │   │   │           ├── Permissions.ts   # 权限管理
-│   │   │   │           └── Node.ts          # 文件节点
-│   │   │   │
-│   │   │   ├── kernel/app-manager/  # 📱 应用管理器
-│   │   │   │   ├── package.json
-│   │   │   │   └── src/
-│   │   │   │       ├── index.ts
-│   │   │   │       ├── registry.tsx   # 应用注册表
-│   │   │   │       └── types.ts
-│   │   │   │
-│   │   │   ├── ui/                   # 🎨 UI 组件库
-│   │   │   │   ├── package.json      # @webos/ui
-│   │   │   │   └── src/
-│   │   │   │       ├── index.ts      # 导出入口
-│   │   │   │       │
-│   │   │   │       ├── styles/       # CSS 样式系统
-│   │   │   │       │   ├── index.css
-│   │   │   │       │   ├── 1-foundations/   # 基础样式
-│   │   │   │       │   │   ├── _variables.css
-│   │   │   │       │   │   └── _reset.css
-│   │   │   │       │   ├── 2-themes/         # 主题
-│   │   │   │       │   │   ├── _light.css
-│   │   │   │       │   │   └── _dark.css
-│   │   │   │       │   ├── 3-components/     # 组件样式
-│   │   │   │       │   │   ├── _desktop.css
-│   │   │   │       │   │   ├── _taskbar.css
-│   │   │   │       │   │   ├── _window.css
-│   │   │   │       │   │   ├── _start-menu.css
-│   │   │   │       │   │   ├── _notification.css
-│   │   │   │       │   │   ├── _boot.css
-│   │   │   │       │   │   ├── _oobe.css
-│   │   │   │       │   │   ├── _auth.css
-│   │   │   │       │   │   ├── _error.css
-│   │   │   │       │   │   └── _tablet.css
-│   │   │   │       │   ├── 4-utilities/      # 工具类
-│   │   │   │       │   │   ├── _animations.css
-│   │   │   │       │   │   └── _utilities.css
-│   │   │   │       │   └── wallpaper.css
-│   │   │   │       │
-│   │   │   │       ├── theme/        # 主题系统
-│   │   │   │       │   ├── index.ts
-│   │   │   │       │   └── acrylic.css
-│   │   │   │       │
-│   │   │   │       ├── hooks/        # React Hooks
-│   │   │   │       │   └── index.ts
-│   │   │   │       │
-│   │   │   │       ├── utils/        # 工具函数
-│   │   │   │       │   └── index.ts
-│   │   │   │       │
-│   │   │   │       ├── components/   # 主要组件
-│   │   │   │       │   ├── Desktop/         # 桌面
-│   │   │   │       │   ├── Taskbar/         # 任务栏
-│   │   │   │       │   ├── Boot/            # 启动画面
-│   │   │   │       │   ├── LockScreen/      # 锁屏
-│   │   │   │       │   ├── Notification/    # 通知
-│   │   │   │       │   ├── ErrorDialog/     # 错误对话框
-│   │   │   │       │   ├── BlueScreen/      # 蓝屏
-│   │   │   │       │   ├── Spinner/         # 加载指示器
-│   │   │   │       │   └── UpdateNotification/
-│   │   │   │       │
-│   │   │   │       ├── desktop/      # 桌面环境组件
-│   │   │   │       │   ├── Desktop.tsx
-│   │   │   │       │   ├── Taskbar.tsx
-│   │   │   │       │   ├── StartMenu.tsx
-│   │   │   │       │   ├── Window.tsx
-│   │   │   │       │   ├── WindowManager.tsx
-│   │   │   │       │   ├── DesktopIcon.tsx
-│   │   │   │       │   ├── ContextMenu.tsx
-│   │   │   │       │   ├── SystemTray.tsx
-│   │   │   │       │   ├── NotificationCenter.tsx
-│   │   │   │       │   ├── LockScreen.tsx
-│   │   │   │       │   ├── LoginScreen.tsx
-│   │   │   │       │   ├── MenuBar.tsx
-│   │   │   │       │   ├── ControlPanel.tsx
-│   │   │   │       │   ├── Widget.tsx
-│   │   │   │       │   └── ResizeHandle.tsx
-│   │   │   │       │
-│   │   │   │       ├── base/         # 基础组件
-│   │   │   │       │   ├── Button.tsx
-│   │   │   │       │   ├── Icon.tsx
-│   │   │   │       │   ├── Typography.tsx
-│   │   │   │       │   ├── Divider.tsx
-│   │   │   │       │   ├── Spacer.tsx
-│   │   │   │       │   └── Color.tsx
-│   │   │   │       │
-│   │   │   │       ├── layout/       # 布局组件
-│   │   │   │       │   ├── Grid.tsx
-│   │   │   │       │   ├── Stack.tsx
-│   │   │   │       │   ├── Flex.tsx
-│   │   │   │       │   ├── Box.tsx
-│   │   │   │       │   ├── Container.tsx
-│   │   │   │       │   └── SplitPanel.tsx
-│   │   │   │       │
-│   │   │   │       ├── input/        # 输入组件
-│   │   │   │       │   ├── Input.tsx
-│   │   │   │       │   ├── TextArea.tsx
-│   │   │   │       │   ├── Select.tsx
-│   │   │   │       │   ├── Checkbox.tsx
-│   │   │   │       │   ├── Radio.tsx
-│   │   │   │       │   ├── Switch.tsx
-│   │   │   │       │   └── Slider.tsx
-│   │   │   │       │
-│   │   │   │       ├── feedback/      # 反馈组件
-│   │   │   │       │   ├── Modal.tsx
-│   │   │   │       │   ├── Drawer.tsx
-│   │   │   │       │   ├── Toast.tsx
-│   │   │   │       │   ├── Alert.tsx
-│   │   │   │       │   ├── Confirm.tsx
-│   │   │   │       │   ├── Tooltip.tsx
-│   │   │   │       │   ├── Popover.tsx
-│   │   │   │       │   ├── Spinner.tsx
-│   │   │   │       │   ├── Message.tsx
-│   │   │   │       │   ├── Notification.tsx
-│   │   │   │       │   └── ProgressOverlay.tsx
-│   │   │   │       │
-│   │   │   │       ├── navigation/   # 导航组件
-│   │   │   │       │   ├── Menu.tsx
-│   │   │   │       │   ├── Tabs.tsx
-│   │   │   │       │   ├── Sidebar.tsx
-│   │   │   │       │   ├── Breadcrumb.tsx
-│   │   │   │       │   ├── Dropdown.tsx
-│   │   │   │       │   ├── Pagination.tsx
-│   │   │   │       │   ├── Steps.tsx
-│   │   │   │       │   ├── Anchor.tsx
-│   │   │   │       │   └── Tree.tsx
-│   │   │   │       │
-│   │   │   │       └── display/      # 展示组件
-│   │   │   │           ├── Card.tsx
-│   │   │   │           ├── List.tsx
-│   │   │   │           ├── Table.tsx
-│   │   │   │           ├── Tree.tsx
-│   │   │   │           ├── Calendar.tsx
-│   │   │   │           ├── Timeline.tsx
-│   │   │   │           ├── Collapse.tsx
-│   │   │   │           └── Statistic.tsx
-│   │   │   │
-│   │   │   ├── i18n/                 # 🌍 国际化
-│   │   │   │   ├── package.json
-│   │   │   │   └── src/
-│   │   │   │       └── index.ts
-│   │   │   └── locales/
-│   │   │       ├── en.json            # English
-│   │   │       ├── zh-CN.json         # 简体中文
-│   │   │       ├── zh-TW.json         # 繁體中文
-│   │   │       ├── fr.json            # Français
-│   │   │       └── de.json            # Deutsch
-│   │   │   │
-│   │   │   ├── bootloader/           # 🚀 启动加载器
-│   │   │   │   ├── package.json
-│   │   │   │   ├── README.md
-│   │   │   │   └── src/
-│   │   │   │       └── index.ts
-│   │   │   │
-│   │   │   ├── recovery/             # 🔄 恢复模式
-│   │   │   │   ├── package.json
-│   │   │   │   ├── README.md
-│   │   │   │   └── src/
-│   │   │   │       └── index.tsx
-│   │   │   │
-│   │   │   ├── oobe/                 # ✨ 首次启动向导
-│   │   │   │   ├── package.json
-│   │   │   │   ├── README.md
-│   │   │   │   └── src/
-│   │   │   │       └── index.tsx
-│   │   │   │
-│   │   │   ├── tablet/               # 📱 触摸支持
-│   │   │   │   ├── package.json
-│   │   │   │   ├── README.md
-│   │   │   │   └── src/
-│   │   │   │       ├── index.ts
-│   │   │   │       ├── deviceDetector.ts
-│   │   │   │       ├── touchHandler.ts
-│   │   │   │       ├── gestures.ts
-│   │   │   │       └── tabletMode.ts
-│   │   │   │
-│   │   │   ├── apps/                 # 📲 内置应用
-│   │   │   │   ├── package.json      # @webos/apps
-│   │   │   │   ├── index.ts          # 应用注册入口
-│   │   │   │   ├── registry.tsx      # 应用注册表
-│   │   │   │   ├── types.ts
-│   │   │   │   │
-│   │   │   │   ├── com.os.clock/     # 时钟应用
-│   │   │   │   │   ├── appinfo.json
-│   │   │   │   │   ├── package.json
-│   │   │   │   │   └── src/
-│   │   │   │   │       ├── index.tsx
-│   │   │   │   │       └── icon.tsx
-│   │   │   │   │
-│   │   │   │   ├── com.os.filemanager/  # 文件管理器
-│   │   │   │   │   ├── appinfo.json
-│   │   │   │   │   ├── package.json
-│   │   │   │   │   └── src/
-│   │   │   │   │       ├── index.tsx
-│   │   │   │   │       └── icon.tsx
-│   │   │   │   │
-│   │   │   │   ├── com.os.settings/     # 设置应用
-│   │   │   │   │   ├── appinfo.json
-│   │   │   │   │   ├── package.json
-│   │   │   │   │   └── src/
-│   │   │   │   │       ├── index.tsx
-│   │   │   │   │       ├── SettingsApp.tsx
-│   │   │   │   │       ├── icon.tsx
-│   │   │   │   │       ├── styles.css
-│   │   │   │   │       └── panes/
-│   │   │   │   │           └── VisualEffects.tsx
-│   │   │   │   │
-│   │   │   │   ├── com.os.terminal/     # 终端应用
-│   │   │   │   │   ├── appinfo.json
-│   │   │   │   │   ├── package.json
-│   │   │   │   │   └── src/
-│   │   │   │   │       ├── index.tsx
-│   │   │   │   │       └── icon.tsx
-│   │   │   │   │
-│   │   │   │   └── com.os.browser/      # 浏览器应用
-│   │   │   │       ├── appinfo.json
-│   │   │   │       ├── package.json
-│   │   │   │       └── src/
-│   │   │   │           ├── index.tsx
-│   │   │   │           ├── icon.tsx
-│   │   │   │           ├── styles.css
-│   │   │   │           ├── kernel/
-│   │   │   │           ├── ipc/
-│   │   │   │           └── network/
-│   │   │   │
-│   │   │   └── dev-plugin/           # 🔌 开发者插件
-│   │   │       ├── package.json
-│   │   │       └── src/
-│   │   │           └── index.ts
-│   │   │
-│   │   ├── public/                   # 静态资源
-│   │   │   ├── version.json
-│   │   │   ├── sw.js
-│   │   │   ├── favicon.svg
-│   │   │   ├── wasm/
-│   │   │   │   └── sql-wasm-browser.wasm
-│   │   │   └── wallpapers/
-│   │   │       ├── catgirl-static.png
-│   │   │       └── catgirl-animated.mp4
-│   │   │
-│   │   └── dist/                     # 构建输出
-│   │       ├── index.html
-│   │       ├── main.*.js
-│   │       ├── main.*.css
-│   │       ├── vendor.*.js
-│   │       └── ...
-│   │
-│   ├── docs/                         # 📄 文档页面组件
-│   │   ├── package.json              # @webos/docs
-│   │   └── src/
-│   │       ├── index.tsx
-│   │       └── page.tsx
-│   │
-│   └── intro/                        # 🏠 介绍页面组件
-│       ├── package.json              # @webos/intro
-│       └── src/
-│           ├── index.tsx
-│           └── page.tsx
-│
-├── CHANGELOG.md                      # 变更日志
-├── README.md                         # 本文件
-└── worklog.md                        # 工作日志
+│       ├── main.ts           # 入口：加载 bootloader.wex
+│       ├── dynamic_loader.ts # 动态模块加载器
+│       ├── runtime_bridge.ts # JS 运行时桥接
+│       └── types.ts          # 类型定义
+├── bootloader/           # C 引导程序
+│   └── src/
+│       ├── main.c            # 入口：初始化 GPU，加载内核
+│       ├── loader.c/h        # 模块加载接口
+│       └── gpu_init.c/h      # GPU 初始化
+├── kernel/               # C 内核
+│   └── src/
+│       ├── main.c            # 内核入口，初始化所有子系统
+│       ├── memory.c/h        # 页分配器 + 堆分配器
+│       ├── process.c/h       # 进程控制块与进程表
+│       ├── scheduler.c/h     # 轮转调度器
+│       ├── ipc.c/h           # 进程间通信
+│       ├── syscall.c/h       # 系统调用表与分发
+│       ├── dynlink.c/h       # 动态链接器
+│       └── host_func.h       # JS 宿主函数声明
+├── drivers/              # C 设备驱动 (.Wdll)
+│   ├── gpu/                  # GPU 驱动（WebGPU 封装）
+│   ├── input/                # 输入驱动（键盘/鼠标）
+│   ├── storage/              # 存储驱动（IndexedDB）
+│   └── network/              # 网络驱动（Fetch API）
+├── services/             # C 系统服务 (.Wdll)
+│   ├── window_manager/       # 窗口管理器
+│   ├── filesystem/           # 文件系统服务
+│   ├── network_service/      # 网络服务
+│   └── appstore/             # 应用商店服务
+├── apps/                 # C++ 应用程序 (.wex)
+│   ├── calculator/           # 计算器
+│   ├── paint/                # 画图
+│   ├── browser/              # 浏览器
+│   └── appstore_client/      # 应用商店客户端
+├── desktop/              # TypeScript 桌面 UI
+│   └── src/
+│       ├── renderer.ts       # WebGPU/Canvas2D 渲染器
+│       ├── desktop.ts        # 桌面环境
+│       ├── taskbar.ts        # 任务栏
+│       └── start_menu.ts     # 开始菜单
+├── libs/                 # 共享库与头文件
+│   ├── syscall.h             # 系统调用桩函数
+│   ├── wm_client.h/c         # 窗口管理器客户端库
+│   └── module_types.h        # 模块类型定义
+├── tools/                # 构建工具
+│   ├── add_module_section.py # 添加 WASM 自定义段
+│   ├── gen_wli.py            # 生成 .wli 接口文件
+│   └── serve.py              # 开发服务器
+├── docs/                 # 文档
+│   ├── architecture.md       # 系统架构
+│   ├── module_spec.md        # 模块格式规范
+│   ├── building.md           # 构建与运行
+│   ├── api_syscall.md        # 系统调用 API
+│   ├── api_services.md       # 系统服务 API
+│   ├── developer_guide.md    # 应用开发指南
+│   └── app_store.md          # 应用商店规范
+├── public/               # 静态资源
+│   ├── wasm/                 # 编译后的 WASM 模块
+│   └── wallpapers/           # 壁纸
+├── Makefile              # 顶层构建文件
+└── README.md
 ```
 
----
+## 快速开始
 
-## 包依赖关系
+### 环境要求
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                      依赖关系图                              │
-├─────────────────────────────────────────────────────────────┤
-│                                                             │
-│  bootloader ──────► (无依赖)                                │
-│                                                             │
-│  recovery ────────► bootloader                              │
-│                                                             │
-│  kernel ──────────► (无依赖)                                │
-│    ├── fs                                                  │
-│    └── app-manager                                         │
-│                                                             │
-│  i18n ────────────► kernel (types)                         │
-│                                                             │
-│  ui ──────────────► kernel (types)                         │
-│                                                             │
-│  oobe ────────────► kernel, ui                              │
-│                                                             │
-│  tablet ──────────► (无依赖)                                │
-│                                                             │
-│  apps ────────────► kernel, ui, i18n                        │
-│                                                             │
-│  dev-plugin ──────► bootloader                              │
-│                                                             │
-├─────────────────────────────────────────────────────────────┤
-│  site ────────────► @webos/os, @webos/docs, @webos/intro    │
-│                                                             │
-└─────────────────────────────────────────────────────────────┘
-```
+- [Emscripten SDK](https://emscripten.org/) (emcc, em++)
+- Python 3.8+
+- Node.js 18+
 
----
-
-## 路径别名配置
-
-在 `site/next.config.js` 和 `site/tsconfig.json` 中配置：
-
-| 别名           | 路径                                  |
-| -------------- | ------------------------------------- |
-| `@kernel`      | `packages/os/packages/kernel/src`     |
-| `@i18n`        | `packages/os/packages/i18n/src`       |
-| `@ui`          | `packages/os/packages/ui/src`         |
-| `@oobe`        | `packages/os/packages/oobe/src`       |
-| `@bootloader`  | `packages/os/packages/bootloader/src` |
-| `@recovery`    | `packages/os/packages/recovery/src`   |
-| `@tablet`      | `packages/os/packages/tablet/src`     |
-| `@apps`        | `packages/os/packages/apps`           |
-| `@webos/os`    | `packages/os/src`                     |
-| `@webos/docs`  | `packages/docs/src`                   |
-| `@webos/intro` | `packages/intro/src`                  |
-
----
-
-## 路由配置
-
-| 路由     | 页面文件                      | 描述              |
-| -------- | ----------------------------- | ----------------- |
-| `/`      | `site/src/app/page.tsx`       | 重定向到 `/intro` |
-| `/intro` | `site/src/app/intro/page.tsx` | 介绍页面          |
-| `/docs`  | `site/src/app/docs/page.tsx`  | 文档页面          |
-| `/app`   | `site/src/app/app/page.tsx`   | WebOS 系统        |
-
----
-
-## 开发命令
+### 构建与运行
 
 ```bash
-# 安装依赖
-bun install
+# 安装 Emscripten
+git clone https://github.com/emscripten-core/emsdk.git
+cd emsdk && ./emsdk install latest && ./emsdk activate latest
+source ./emsdk_env.sh
 
-# 启动 Next.js 开发服务器
-bun run dev          # 或 cd site && bun run dev
+# 克隆项目
+git clone https://github.com/DingdingOvO/webos.git
+cd webos
 
-# 启动 WebOS 独立开发服务器
-bun run dev:os       # 或 cd packages/os && bun run dev
+# 一键构建
+make all
 
-# 构建 WebOS
-bun run build:os
-
-# 构建 Next.js 站点
-bun run build:site
-
-# 完整构建（OS + 复制 + 站点）
-bun run build
+# 在浏览器中运行
+make serve
+# 打开 http://localhost:8080
 ```
 
----
+### 单独构建模块
 
-## 技术栈
+```bash
+make bootloader    # 构建引导程序
+make kernel        # 构建内核
+make drivers       # 构建驱动
+make services      # 构建服务
+make apps          # 构建应用
+make host          # 构建 TypeScript 宿主
+```
 
-| 类别   | 技术                                 |
-| ------ | ------------------------------------ |
-| 运行时 | Bun                                  |
-| 框架   | Next.js 16 / React 19                |
-| 语言   | TypeScript 6                         |
-| 构建   | Webpack 5 / Turbopack                |
-| 数据库 | sql.js (SQLite in WASM)              |
-| 加密   | Web Crypto API (AES-256-GCM, PBKDF2) |
-| 样式   | CSS Modules                          |
+## 系统调用
 
----
+| 子系统 | 编号范围 | 示例 |
+|--------|---------|------|
+| 文件系统 | 0x0100 | fs_read, fs_write, fs_mkdir |
+| 进程管理 | 0x0200 | exit, getpid, fork, kill |
+| 内存管理 | 0x0300 | malloc, free |
+| 时间 | 0x0400 | time_now |
+| I/O | 0x0500 | (预留) |
+| 网络 | 0x0600 | (预留) |
+| 调试 | 0x0700 | debug_log |
+| IPC | 0x0800 | ipc_send, ipc_recv |
+| 通知 | 0x0900 | notify_show |
+| 动态链接 | 0x0A00 | dlopen, dlsym |
 
-## 内置应用
+## 开发文档
 
-| 应用         | ID                   | 描述       |
-| ------------ | -------------------- | ---------- |
-| Clock        | `com.os.clock`       | 时钟和闹钟 |
-| File Manager | `com.os.filemanager` | 文件管理器 |
-| Settings     | `com.os.settings`    | 系统设置   |
-| Terminal     | `com.os.terminal`    | 终端模拟器 |
-| Browser      | `com.os.browser`     | 网页浏览器 |
-
----
-
-## 国际化支持
-
-| 代码    | 语言     | 状态    |
-| ------- | -------- | ------- |
-| `en`    | English  | ✅ 完整 |
-| `zh-CN` | 简体中文 | ✅ 完整 |
-| `zh-TW` | 繁體中文 | ✅ 完整 |
-| `fr`    | Français | 🔲 预留 |
-| `de`    | Deutsch  | 🔲 预留 |
-
----
-
-## 文档
-
-- [开发者插件指南](docs/developer-plugin.md)
-- [第三方应用开发](docs/THIRD-PARTY-APPS.md)
-- [UI 框架文档](docs/UI-FRAMEWORK.md)
-- [Kernel README](packages/os/packages/kernel/README.md)
-- [UI README](packages/os/packages/ui/README.md)
-- [Apps README](packages/os/packages/apps/README.md)
-- [Bootloader README](packages/os/packages/bootloader/README.md)
-- [OOBE README](packages/os/packages/oobe/README.md)
-- [Recovery README](packages/os/packages/recovery/README.md)
-- [I18n README](packages/os/packages/i18n/README.md)
-- [Tablet README](packages/os/packages/tablet/README.md)
-- [Packages Overview](packages/README.md)
-- [工作日志](worklog.md)
-- [变更日志](CHANGELOG.md)
-
----
+- [系统架构](docs/architecture.md)
+- [模块格式规范](docs/module_spec.md)
+- [构建与运行](docs/building.md)
+- [系统调用 API](docs/api_syscall.md)
+- [系统服务 API](docs/api_services.md)
+- [应用开发指南](docs/developer_guide.md)
+- [应用商店规范](docs/app_store.md)
 
 ## 许可证
 
 MIT License
-
----
-
-<p align="center">
-  Made with ❤️ by <a href="https://github.com/DingDing-bbb">DingDing-bbb</a>
-</p>

@@ -1,61 +1,62 @@
-.PHONY: all kernel userland wasm site dev build clean
+# WebOS Top-level Makefile
+# Supports recursive building of all modules
 
-# ============================================================
-# WebOS 统一构建
-#
-#   make          - 构建所有（kernel + userland + site）
-#   make kernel   - 构建 Rust 内核 WASM
-#   make userland - 构建 Rust 用户态程序 WASM
-#   make wasm     - 复制所有 WASM 到 site/public/wasm/
-#   make site     - 构建 Next.js 站点
-#   make dev      - 启动开发服务器
-#   make clean    - 清理所有构建产物
-# ============================================================
+.PHONY: all clean host bootloader kernel drivers services apps tools docs serve
 
-WASM_DIR  := site/public/wasm
-RUST_TARGET := wasm32-unknown-unknown
+# Default target: build everything
+all: tools bootloader kernel drivers services apps host
 
-all: kernel userland wasm site
+# Phase 0: Tools
+tools:
+	@echo "[Tools] Building helper tools..."
+	chmod +x tools/add_module_section.py tools/gen_wli.py
 
-# --- Rust 内核 ---
-kernel:
-	cargo build --manifest-path kernel/Cargo.toml --target $(RUST_TARGET) --release
-	@echo "✓ Kernel built"
+# Phase 1: TypeScript Host
+host:
+	@echo "[Host] Building TypeScript host..."
+	cd host && npm install && npm run build
 
-# --- Rust 用户态程序 ---
-userland:
-	cargo build --manifest-path userland/init/Cargo.toml --target $(RUST_TARGET) --release
-	cargo build --manifest-path userland/shell/Cargo.toml --target $(RUST_TARGET) --release
-	cargo build --manifest-path userland/ls/Cargo.toml --target $(RUST_TARGET) --release
-	cargo build --manifest-path userland/cat/Cargo.toml --target $(RUST_TARGET) --release
-	@echo "✓ Userland built"
+# Phase 2: Bootloader
+bootloader: tools
+	@echo "[Bootloader] Building C bootloader..."
+	cd bootloader && make
 
-# --- 复制 WASM 到 site ---
-wasm: kernel userland
-	@mkdir -p $(WASM_DIR)
-	cp kernel/target/$(RUST_TARGET)/release/kernel.wasm $(WASM_DIR)/
-	cp userland/init/target/$(RUST_TARGET)/release/init.wasm $(WASM_DIR)/ || \
-	  cp target/$(RUST_TARGET)/release/init.wasm $(WASM_DIR)/ || true
-	cp userland/shell/target/$(RUST_TARGET)/release/shell.wasm $(WASM_DIR)/ || \
-	  cp target/$(RUST_TARGET)/release/shell.wasm $(WASM_DIR)/ || true
-	cp userland/ls/target/$(RUST_TARGET)/release/ls.wasm $(WASM_DIR)/ || \
-	  cp target/$(RUST_TARGET)/release/ls.wasm $(WASM_DIR)/ || true
-	cp userland/cat/target/$(RUST_TARGET)/release/cat.wasm $(WASM_DIR)/ || \
-	  cp target/$(RUST_TARGET)/release/cat.wasm $(WASM_DIR)/ || true
-	@echo "✓ WASM copied to $(WASM_DIR)"
+# Phase 3: Kernel
+kernel: tools
+	@echo "[Kernel] Building C kernel..."
+	cd kernel && make
 
-# --- Next.js ---
-site:
-	cd site && npx next build
+# Phase 4: Drivers
+drivers: tools kernel
+	@echo "[Drivers] Building device drivers..."
+	cd drivers && make
 
-# --- 开发 ---
-dev:
-	cd site && npx next dev -p 3000 --turbopack
+# Phase 5: Services
+services: tools kernel drivers
+	@echo "[Services] Building system services..."
+	cd services && make
 
-# --- 清理 ---
+# Phase 6: Apps
+apps: tools services
+	@echo "[Apps] Building applications..."
+	cd apps && make
+
+# Phase 8: Documentation
+docs:
+	@echo "[Docs] Documentation is in docs/ directory"
+
+# Serve in browser
+serve: all
+	@echo "[Serve] Starting development server..."
+	cd host && npm run serve
+
+# Clean everything
 clean:
-	cargo clean --manifest-path kernel/Cargo.toml
-	cd userland && for d in init shell ls cat; do cargo clean --manifest-path $$d/Cargo.toml 2>/dev/null; done
-	rm -rf site/.next site/public/wasm/*.wasm
-	rm -rf node_modules site/node_modules
-	@echo "✓ Cleaned"
+	cd bootloader && make clean 2>/dev/null || true
+	cd kernel && make clean 2>/dev/null || true
+	cd drivers && make clean 2>/dev/null || true
+	cd services && make clean 2>/dev/null || true
+	cd apps && make clean 2>/dev/null || true
+	cd host && npm run clean 2>/dev/null || true
+	rm -rf public/wasm/*.wasm public/wasm/*.wex public/wasm/*.Wdll public/wasm/*.wli
+	@echo "Clean complete."

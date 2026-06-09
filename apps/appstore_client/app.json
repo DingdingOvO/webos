@@ -1,0 +1,12 @@
+{
+  "name": "App Store",
+  "id": "com.os.appstore",
+  "version": "1.0.0",
+  "description": "Application store client",
+  "entry": "appstore.wex",
+  "icon": "/icons/store.png",
+  "category": "System",
+  "author": "WebOS Team",
+  "permissions": ["wm", "input", "storage"],
+  "dependencies": ["appstore_service.Wdll"]
+}

@@ -1,0 +1,12 @@
+{
+  "name": "Calculator",
+  "id": "com.os.calculator",
+  "version": "1.0.0",
+  "description": "Simple calculator application",
+  "entry": "calculator.wex",
+  "icon": "/icons/calc.png",
+  "category": "Utilities",
+  "author": "WebOS Team",
+  "permissions": ["wm", "input"],
+  "dependencies": []
+}

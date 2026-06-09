@@ -1,0 +1,12 @@
+{
+  "name": "Browser",
+  "id": "com.os.browser",
+  "version": "1.0.0",
+  "description": "Simple web browser",
+  "entry": "browser.wex",
+  "icon": "/icons/browser.png",
+  "category": "Internet",
+  "author": "WebOS Team",
+  "permissions": ["wm", "input", "net"],
+  "dependencies": ["net_service.Wdll"]
+}

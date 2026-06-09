@@ -74,7 +74,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Setup Emscripten
-        uses: mymindstorm/setup-emsdk@v14
+        uses: mymindstorm/setup-emsdk@v16
         with: { version: '${{ env.EM_VERSION }}', actions-cache-folder: 'emsdk-cache' }
       - name: Build ${{ matrix.module }}
         run: cd ${{ matrix.module }} && make

@@ -96,7 +96,7 @@ typedef struct {
 #define RUN_TESTS(tests_array) do { \
     int total = sizeof(tests_array) / sizeof(tests_array[0]); \
     printf("\n" COLOR_YELLOW "═══════════════════════════════════════════════════\n"); \
-    printf("  WebOS Test Suite v0.0.b\n"); \
+    printf("  WebOS Test Suite v0.0.1beta\n"); \
     printf("  Running %d tests...\n", total); \
     printf("═══════════════════════════════════════════════════\n\n" COLOR_RESET); \
     \

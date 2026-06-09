@@ -1,9 +1,8 @@
-name: Deploy to GitHub Pages
+name: Deploy
 
 on:
   push:
     branches: [main]
-    tags: ['v*']
   workflow_dispatch:
 
 permissions:
@@ -13,58 +12,109 @@ permissions:
 
 concurrency:
   group: pages
-  cancel-in-progress: false
+  cancel-in-progress: true
+
+env:
+  EM_VERSION: 3.1.56
 
 jobs:
-  test:
-    uses: ./.github/workflows/ci.yml
-    
-  build:
+  # ─── Build WASM Modules ────────────────────────────
+  build-wasm:
+    name: Build WASM (${{ matrix.module }})
     runs-on: ubuntu-latest
-    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        module: [bootloader, kernel, drivers, services, apps]
     steps:
       - uses: actions/checkout@v4
-      
       - name: Setup Emscripten
         uses: mymindstorm/setup-emsdk@v14
+        with: { version: '${{ env.EM_VERSION }}', actions-cache-folder: 'emsdk-cache' }
+      - name: Build ${{ matrix.module }}
+        run: cd ${{ matrix.module }} && make
+      - name: Upload WASM artifacts
+        uses: actions/upload-artifact@v4
         with:
-          version: 3.1.56
-      
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-      
-      - name: Build all WASM modules
-        run: make all
-      
+          name: wasm-${{ matrix.module }}
+          path: public/wasm/
+
+  # ─── Build TypeScript Host ─────────────────────────
+  build-host:
+    name: Build TypeScript Host
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
       - name: Build host
         run: cd host && npm install && npm run build
-      
-      - name: Build site
-        run: cd site && npm install && npm run build
-        env:
-          GITHUB_PAGES: 1
-      
-      - name: Merge artifacts
-        run: |
-          mkdir -p deploy
-          cp -r site/out/* deploy/
-          cp -r public/wasm deploy/wasm
-          cp -r public/wallpapers deploy/wallpapers
-      
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
+      - name: Build desktop
+        run: cd desktop && npm install && npm run build
+      - name: Upload host artifacts
+        uses: actions/upload-artifact@v4
         with:
-          path: deploy
+          name: host-build
+          path: host/dist/
 
+  # ─── Build Website ─────────────────────────────────
+  build-site:
+    name: Build Website
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Install dependencies
+        run: cd site && npm install
+      - name: Build site
+        run: cd site && npm run build
+      - name: Upload site artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: site-build
+          path: site/out/
+
+  # ─── Merge & Deploy ────────────────────────────────
   deploy:
+    name: Deploy to GitHub Pages
+    runs-on: ubuntu-latest
+    needs: [build-wasm, build-host, build-site]
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
-    needs: build
     steps:
+      - uses: actions/checkout@v4
+      - name: Download all WASM artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: wasm-*
+          path: deploy/wasm/
+      - name: Download host artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: host-build
+          path: deploy/js/
+      - name: Download site artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: site-build
+          path: deploy/
+      - name: Copy static assets
+        run: |
+          mkdir -p deploy/wallpapers
+          cp -r public/wallpapers/* deploy/wallpapers/ 2>/dev/null || true
+      - name: Create version file
+        run: |
+          echo "WebOS v0.0.1beta" > deploy/version.txt
+          echo "Built: $(date -u)" >> deploy/version.txt
+          echo "Commit: ${{ github.sha }}" >> deploy/version.txt
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: deploy/
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4

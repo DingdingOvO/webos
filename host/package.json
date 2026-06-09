@@ -1,6 +1,6 @@
 {
   "name": "@webos/host",
-  "version": "0.0.b",
+  "version": "0.0.1beta",
   "description": "WebOS TypeScript Host - Browser entry point",
   "main": "dist/main.js",
   "scripts": {

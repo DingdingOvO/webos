@@ -5,8 +5,19 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
-  // Copy WASM and wallpaper files to output
   webpack: (config, { isServer }) => {
+    // WASM support
+    config.experiments = {
+      ...config.experiments,
+      asyncWebAssembly: true,
+    };
+
+    // Add .wasm file handling
+    config.module.rules.push({
+      test: /\.wasm$/,
+      type: 'asset/resource',
+    });
+
     if (!isServer) {
       config.resolve.fallback = {
         ...config.resolve.fallback,
@@ -14,6 +25,7 @@ const nextConfig = {
         path: false,
       };
     }
+
     return config;
   },
 };

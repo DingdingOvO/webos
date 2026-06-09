@@ -120,7 +120,7 @@ function testAppJsonFormat() {
   const app = {
     name: 'Calculator',
     id: 'com.os.calculator',
-    version: '0.0.b',
+    version: '0.0.1beta',
     description: 'Simple calculator',
     entry: 'calculator.wex',
     icon: '/icons/calc.png',
@@ -134,7 +134,7 @@ function testAppJsonFormat() {
   for (const field of required) {
     assert.ok(field in app, `Missing required field: ${field}`);
   }
-  assert.ok(app.version === '0.0.b', 'Version must be 0.0.b');
+  assert.ok(app.version === '0.0.1beta', 'Version must be 0.0.1beta');
   assert.ok(app.entry.endsWith('.wex'), 'Entry must end with .wex');
   console.log('  ✓ app.json format is valid');
 }

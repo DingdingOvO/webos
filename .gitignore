@@ -1,15 +1,14 @@
 # Build output
-public/wasm/*.wasm
-public/wasm/*.wex
-public/wasm/*.Wdll
-public/wasm/*.wli
+public/wasm/
 public/webos-host.js
 public/index.html
 
 # Dependencies
 node_modules/
 host/node_modules/
+host/dist/
 desktop/node_modules/
+desktop/dist/
 site/node_modules/
 
 # Next.js
@@ -21,10 +20,25 @@ build/
 dist/
 *.iso
 *.o
-*.wasm
-*.wex
-*.Wdll
-*.wli
+
+# Test binaries (compiled C tests)
+tests/test_memory
+tests/test_process
+tests/test_ipc
+tests/test_scheduler
+tests/test_syscall
+tests/test_dynlink
+tests/test_memory_extended
+tests/test_process_extended
+tests/test_ipc_extended
+tests/test_syscall_extended
+tests/test_scheduler_extended
+tests/test_dynlink_extended
+tests/test_integration_kernel
+tests/test_driver_stubs
+tests/test_services
+tests/*_asan
+tests/*_dbg
 
 # IDE
 .vscode/

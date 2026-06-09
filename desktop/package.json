@@ -1,6 +1,6 @@
 {
   "name": "@webos/desktop",
-  "version": "0.0.b",
+  "version": "0.0.1beta",
   "description": "WebOS Desktop UI - TypeScript + WebGPU desktop environment",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

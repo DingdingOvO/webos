@@ -1,7 +1,7 @@
 {
   "name": "Paint",
   "id": "com.os.paint",
-  "version": "0.0.b",
+  "version": "0.0.1beta",
   "description": "Simple drawing application",
   "entry": "paint.wex",
   "icon": "/icons/paint.png",

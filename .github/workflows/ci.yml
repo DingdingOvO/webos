@@ -12,28 +12,28 @@ env:
 jobs:
   # ─── Lint & Format ─────────────────────────────────
   lint:
-    name: Lint & Format
+    name: Lint & Format Check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
       - name: Setup Node.js
         uses: actions/setup-node@v4
-        with:
-          node-version: 20
-      
-      - name: Check C formatting (clang-format)
+        with: { node-version: 22 }
+      - name: Install lint tools
         run: |
-          sudo apt-get install -y clang-format
-          find kernel bootloader drivers services -name '*.c' -o -name '*.h' | head -20
-          clang-format --dry-run --Werror kernel/src/*.c kernel/src/*.h bootloader/src/*.c bootloader/src/*.h 2>&1 || true
-          echo "C format check (non-blocking for now)"
-      
+          npm install -g prettier clang-format
+      - name: Check C/C++ formatting
+        run: |
+          find kernel bootloader drivers services apps libs -name '*.c' -o -name '*.h' -o -name '*.cpp' | \
+            xargs clang-format --dry-run --Werror 2>&1 || echo "C formatting issues found (non-blocking)"
       - name: Check TypeScript formatting
         run: |
-          npm install -g prettier
-          find host desktop -name '*.ts' -exec prettier --check {} \; 2>&1 || true
-          echo "TypeScript format check (non-blocking for now)"
+          find host desktop site -name '*.ts' -o -name '*.tsx' | \
+            xargs prettier --check 2>&1 || echo "TypeScript formatting issues found (non-blocking)"
+      - name: Check Python formatting
+        run: |
+          pip install black
+          find tools tests -name '*.py' | xargs black --check 2>&1 || echo "Python formatting issues found (non-blocking)"
 
   # ─── C Unit Tests ──────────────────────────────────
   c-tests:
@@ -41,117 +41,94 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
-      - name: Install dependencies
-        run: sudo apt-get install -y gcc make python3
-      
-      - name: Run C tests
-        run: |
-          cd tests
-          make c-tests
-      
-      - name: Run Python tool tests
-        run: |
-          cd tests
-          make py-tests
-      
+      - name: Install GCC & Make
+        run: sudo apt-get update && sudo apt-get install -y gcc make python3
+      - name: Compile and run C tests
+        run: cd tests && make c-tests
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
-        with:
-          name: c-test-results
-          path: tests/
+        with: { name: c-test-results, path: tests/ }
+
+  # ─── Python Tool Tests ─────────────────────────────
+  py-tests:
+    name: Python Tool Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - name: Run Python tests
+        run: cd tests && make py-tests
 
   # ─── Build WASM Modules ────────────────────────────
   build-wasm:
-    name: Build WASM Modules
+    name: Build WASM (${{ matrix.module }})
     runs-on: ubuntu-latest
     needs: c-tests
+    strategy:
+      fail-fast: false
+      matrix:
+        module: [bootloader, kernel, drivers, services, apps]
     steps:
       - uses: actions/checkout@v4
-      
       - name: Setup Emscripten
         uses: mymindstorm/setup-emsdk@v14
-        with:
-          version: ${{ env.EM_VERSION }}
-          actions-cache-folder: 'emsdk-cache'
-      
-      - name: Verify Emscripten
-        run: emcc --version
-      
-      - name: Build bootloader
-        run: |
-          cd bootloader && make
-        continue-on-error: true
-      
-      - name: Build kernel
-        run: |
-          cd kernel && make
-        continue-on-error: true
-      
-      - name: Build drivers
-        run: |
-          cd drivers && make
-        continue-on-error: true
-      
-      - name: Build services
-        run: |
-          cd services && make
-        continue-on-error: true
-      
-      - name: Build apps
-        run: |
-          cd apps && make
-        continue-on-error: true
-      
-      - name: List built WASM files
-        run: ls -la public/wasm/ || echo "No WASM files built yet"
-      
+        with: { version: '${{ env.EM_VERSION }}', actions-cache-folder: 'emsdk-cache' }
+      - name: Build ${{ matrix.module }}
+        run: cd ${{ matrix.module }} && make
       - name: Upload WASM artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: wasm-modules
+          name: wasm-${{ matrix.module }}
           path: public/wasm/
 
-  # ─── Build Host ────────────────────────────────────
+  # ─── Build TypeScript Host ─────────────────────────
   build-host:
     name: Build TypeScript Host
     runs-on: ubuntu-latest
+    needs: py-tests
     steps:
       - uses: actions/checkout@v4
-      
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-      
-      - name: Install & build host
-        run: |
-          cd host && npm install && npm run build
-        continue-on-error: true
-      
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Build host
+        run: cd host && npm install && npm run build
       - name: Build desktop
-        run: |
-          cd desktop && npm install && npm run build
-        continue-on-error: true
+        run: cd desktop && npm install && npm run build
 
-  # ─── Build Site ────────────────────────────────────
+  # ─── Build Website ─────────────────────────────────
   build-site:
     name: Build Website
     runs-on: ubuntu-latest
+    needs: py-tests
     steps:
       - uses: actions/checkout@v4
-      
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-      
-      - name: Install & build site
-        run: |
-          cd site && npm install && npm run build
-        continue-on-error: true
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Install dependencies
+        run: cd site && npm install
+      - name: Lint
+        run: cd site && npx next lint || true
+      - name: Build
+        run: cd site && npm run build
+      - name: Upload site artifact
+        uses: actions/upload-artifact@v4
+        with: { name: site-build, path: site/out/ }
+
+  # ─── TypeScript Integration Tests ──────────────────
+  ts-integration:
+    name: TypeScript Integration Tests
+    runs-on: ubuntu-latest
+    needs: build-host
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Run integration tests
+        run: cd tests && npm install && make ts-tests
 
   # ─── Build ISO ─────────────────────────────────────
   build-iso:
@@ -160,69 +137,38 @@ jobs:
     needs: build-wasm
     steps:
       - uses: actions/checkout@v4
-      
-      - name: Download WASM artifacts
+      - name: Download all WASM artifacts
         uses: actions/download-artifact@v4
         with:
-          name: wasm-modules
+          pattern: wasm-*
           path: public/wasm/
-      
-      - name: Install ISO build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y xorriso grub-pc-bin grub-common mtools
-      
+      - name: Install ISO dependencies
+        run: sudo apt-get update && sudo apt-get install -y xorriso grub-pc-bin grub-common mtools
       - name: Build ISO
-        run: |
-          chmod +x tools/build_iso.sh
-          ./tools/build_iso.sh
-        continue-on-error: true
-      
+        run: chmod +x tools/build_iso.sh && ./tools/build_iso.sh dist/webos-0.0.1beta.iso
       - name: Upload ISO
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: webos-iso
-          path: dist/webos-0.0.b.iso
+          path: dist/webos-0.0.1beta.iso
 
-  # ─── Integration Test ──────────────────────────────
-  integration:
-    name: Integration Tests
-    runs-on: ubuntu-latest
-    needs: build-wasm
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-      
-      - name: Download WASM artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: wasm-modules
-          path: public/wasm/
-      
-      - name: Run integration tests
-        run: |
-          cd tests && make ts-tests
-        continue-on-error: true
-
-  # ─── Summary ───────────────────────────────────────
+  # ─── CI Summary ────────────────────────────────────
   summary:
     name: CI Summary
     runs-on: ubuntu-latest
-    needs: [lint, c-tests, build-wasm, build-host, build-site]
+    needs: [lint, c-tests, py-tests, build-wasm, build-host, build-site, ts-integration]
     if: always()
     steps:
-      - name: Check results
+      - name: Results
         run: |
           echo "## CI Results" >> $GITHUB_STEP_SUMMARY
           echo "| Job | Status |" >> $GITHUB_STEP_SUMMARY
           echo "|-----|--------|" >> $GITHUB_STEP_SUMMARY
           echo "| Lint | ${{ needs.lint.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| C Tests | ${{ needs.c-tests.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Python Tests | ${{ needs.py-tests.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Build WASM | ${{ needs.build-wasm.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Build Host | ${{ needs.build-host.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Build Site | ${{ needs.build-site.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| TS Integration | ${{ needs.ts-integration.result }} |" >> $GITHUB_STEP_SUMMARY

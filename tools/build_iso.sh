@@ -1,5 +1,5 @@
 #!/bin/bash
-# WebOS ISO Builder v0.0.b
+# WebOS ISO Builder v0.0.1beta
 # Creates a bootable ISO image with a minimal Linux + Chromium kiosk
 # that auto-launches the WebOS application.
 #
@@ -9,7 +9,7 @@
 
 set -e
 
-VERSION="0.0.b"
+VERSION="0.0.1beta"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 BUILD_DIR="${PROJECT_DIR}/build/iso"
@@ -52,7 +52,7 @@ cat > "${BUILD_DIR}/webos/index.html" << 'HTMLEOF'
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>WebOS v0.0.b</title>
+<title>WebOS v0.0.1beta</title>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
@@ -74,7 +74,7 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
 <canvas id="webos-canvas"></canvas>
 <div id="boot-status">
   <div class="spinner"></div>
-  <p>WebOS v0.0.b — Starting...</p>
+  <p>WebOS v0.0.1beta — Starting...</p>
 </div>
 </body>
 </html>
@@ -86,12 +86,12 @@ cat > "${BUILD_DIR}/boot/grub/grub.cfg" << 'GRUBEOF'
 set timeout=0
 set default=0
 
-menuentry "WebOS v0.0.b (Memory OS)" {
+menuentry "WebOS v0.0.1beta (Memory OS)" {
     linux /boot/vmlinuz quiet splash boot=live nopersistence
     initrd /boot/initrd.img
 }
 
-menuentry "WebOS v0.0.b (Safe Mode)" {
+menuentry "WebOS v0.0.1beta (Safe Mode)" {
     linux /boot/vmlinuz quiet splash boot=live nopersistence nomodeset
     initrd /boot/initrd.img
 }
@@ -133,7 +133,7 @@ mount -t proc proc /proc
 mount -t sysfs sysfs /sys
 mount -t devtmpfs devtmpfs /dev
 
-echo "WebOS v0.0.b — Memory Operating System"
+echo "WebOS v0.0.1beta — Memory Operating System"
 echo "Loading WebOS..."
 
 # Try to start X with Chromium in kiosk mode
@@ -161,8 +161,8 @@ else
     
     # Create a README in the ISO
     cat > "${BUILD_DIR}/README.txt" << 'READMEEOF'
-WebOS v0.0.b — Memory Operating System
-========================================
+WebOS v0.0.1beta — Memory Operating System
+===========================================
 
 This ISO contains the WebOS application files.
 

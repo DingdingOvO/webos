@@ -1,0 +1,151 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+env:
+  EM_VERSION: 3.1.56
+
+jobs:
+  # ─── Build WASM Modules ────────────────────────────
+  build-wasm:
+    name: Build WASM (${{ matrix.module }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        module: [bootloader, kernel, drivers, services, apps]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Emscripten
+        uses: mymindstorm/setup-emsdk@v14
+        with: { version: '${{ env.EM_VERSION }}', actions-cache-folder: 'emsdk-cache' }
+      - name: Build ${{ matrix.module }}
+        run: cd ${{ matrix.module }} && make
+      - name: Upload WASM artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: wasm-${{ matrix.module }}
+          path: public/wasm/
+
+  # ─── Build TypeScript Host ─────────────────────────
+  build-host:
+    name: Build TypeScript Host
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Build host
+        run: cd host && npm install && npm run build
+      - name: Build desktop
+        run: cd desktop && npm install && npm run build
+      - name: Upload host artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: host-build
+          path: host/dist/
+
+  # ─── Build Website ─────────────────────────────────
+  build-site:
+    name: Build Website
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Install dependencies
+        run: cd site && npm install
+      - name: Build site
+        run: cd site && npm run build
+      - name: Upload site artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: site-build
+          path: site/out/
+
+  # ─── Run Tests ─────────────────────────────────────
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install GCC & Make
+        run: sudo apt-get update && sudo apt-get install -y gcc make python3
+      - name: Run C unit tests
+        run: cd tests && make c-tests
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - name: Run Python tests
+        run: cd tests && make py-tests
+
+  # ─── Build ISO & Create Release ────────────────────
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    needs: [build-wasm, build-host, build-site, test]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all WASM artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: wasm-*
+          path: public/wasm/
+
+      - name: Download host artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: host-build
+          path: host/dist/
+
+      - name: Download site artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: site-build
+          path: site/out/
+
+      - name: Install ISO dependencies
+        run: sudo apt-get update && sudo apt-get install -y xorriso grub-pc-bin grub-common mtools
+
+      - name: Build ISO
+        run: chmod +x tools/build_iso.sh && ./tools/build_iso.sh dist/webos-0.0.1beta.iso
+
+      - name: Create release tarball
+        run: |
+          mkdir -p release/webos-0.0.1beta
+          cp -r public/wasm release/webos-0.0.1beta/wasm 2>/dev/null || true
+          cp -r public/wallpapers release/webos-0.0.1beta/wallpapers 2>/dev/null || true
+          cp -r host/dist release/webos-0.0.1beta/js 2>/dev/null || true
+          cp -r site/out release/webos-0.0.1beta/site 2>/dev/null || true
+          echo "WebOS v0.0.1beta" > release/webos-0.0.1beta/VERSION.txt
+          echo "Built: $(date -u)" >> release/webos-0.0.1beta/VERSION.txt
+          echo "Tag: ${{ github.ref_name }}" >> release/webos-0.0.1beta/VERSION.txt
+          cd release && tar czf webos-0.0.1beta.tar.gz webos-0.0.1beta
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: WebOS ${{ github.ref_name }}
+          body: |
+            ## WebOS ${{ github.ref_name }}
+
+            ### Downloads
+            - **ISO Image**: `webos-0.0.1beta.iso` — Bootable ISO image
+            - **Tarball**: `webos-0.0.1beta.tar.gz` — Complete application bundle
+
+            ### What's Changed
+            See commit history for changes since last release.
+
+            **Full Changelog**: https://github.com/${{ github.repository }}/commits/${{ github.ref_name }}
+          files: |
+            dist/webos-0.0.1beta.iso
+            release/webos-0.0.1beta.tar.gz
+          draft: false
+          prerelease: ${{ contains(github.ref_name, 'beta') || contains(github.ref_name, 'alpha') || contains(github.ref_name, 'rc') }}

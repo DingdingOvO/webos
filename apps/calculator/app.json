@@ -1,7 +1,7 @@
 {
   "name": "Calculator",
   "id": "com.os.calculator",
-  "version": "0.0.b",
+  "version": "0.0.1beta",
   "description": "Simple calculator application",
   "entry": "calculator.wex",
   "icon": "/icons/calc.png",

@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation';
 
-export default function OsRedirectPage() {
+export default function AppPage() {
   redirect('/app/os');
 }

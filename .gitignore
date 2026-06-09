@@ -10,9 +10,16 @@ public/index.html
 node_modules/
 host/node_modules/
 desktop/node_modules/
+site/node_modules/
+
+# Next.js
+site/.next/
+site/out/
 
 # Build artifacts
+build/
 dist/
+*.iso
 *.o
 *.wasm
 *.wex

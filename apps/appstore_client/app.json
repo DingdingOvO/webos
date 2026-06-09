@@ -1,7 +1,7 @@
 {
   "name": "App Store",
   "id": "com.os.appstore",
-  "version": "1.0.0",
+  "version": "0.0.b",
   "description": "Application store client",
   "entry": "appstore.wex",
   "icon": "/icons/store.png",

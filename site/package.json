@@ -1,0 +1,23 @@
+{
+  "name": "@webos/site",
+  "version": "0.0.b",
+  "description": "WebOS Website & Runtime Host",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --turbopack",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "clean": "rm -rf .next out node_modules"
+  },
+  "dependencies": {
+    "next": "^16.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/react": "^19.0.0",
+    "typescript": "^5.3.0"
+  }
+}

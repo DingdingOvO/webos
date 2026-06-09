@@ -1,7 +1,7 @@
 {
   "name": "Browser",
   "id": "com.os.browser",
-  "version": "1.0.0",
+  "version": "0.0.b",
   "description": "Simple web browser",
   "entry": "browser.wex",
   "icon": "/icons/browser.png",

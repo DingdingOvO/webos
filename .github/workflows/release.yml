@@ -28,7 +28,7 @@ jobs:
       - name: Build ${{ matrix.module }}
         run: cd ${{ matrix.module }} && make
       - name: Upload WASM artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: wasm-${{ matrix.module }}
           path: public/wasm/
@@ -46,7 +46,7 @@ jobs:
       - name: Build desktop
         run: cd desktop && npm install && npm run build
       - name: Upload host artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: host-build
           path: host/dist/
@@ -64,7 +64,7 @@ jobs:
       - name: Build site
         run: cd site && npm run build
       - name: Upload site artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: site-build
           path: site/out/

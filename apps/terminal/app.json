@@ -1,0 +1,12 @@
+{
+  "name": "Terminal",
+  "id": "com.os.terminal",
+  "version": "0.0.1beta",
+  "description": "Command-line terminal emulator with shell",
+  "entry": "terminal.wex",
+  "icon": "/icons/terminal.png",
+  "category": "System",
+  "author": "WebOS Team",
+  "permissions": ["wm", "input", "fs", "process"],
+  "dependencies": []
+}

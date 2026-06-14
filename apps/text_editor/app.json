@@ -1,0 +1,12 @@
+{
+  "name": "Text Editor",
+  "id": "com.os.texteditor",
+  "version": "0.0.1beta",
+  "description": "Simple text editor with syntax highlighting",
+  "entry": "text_editor.wex",
+  "icon": "/icons/texteditor.png",
+  "category": "Utilities",
+  "author": "WebOS Team",
+  "permissions": ["wm", "input", "fs"],
+  "dependencies": []
+}

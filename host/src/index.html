@@ -6,26 +6,51 @@
   <title>WebOS</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
-    #webos-canvas { width: 100%; height: 100%; display: block; }
-    #boot-status {
-      position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
-      color: #ccc; font-family: 'Segoe UI', sans-serif; font-size: 18px;
-      text-align: center;
+    html, body {
+      width: 100%; height: 100%; overflow: hidden;
+      background: #0F172A;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    }
+    #webos-canvas {
+      width: 100%; height: 100%; display: block;
+    }
+    #boot-overlay {
+      position: fixed; inset: 0;
+      background: #0F172A;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      color: #94A3B8;
+      z-index: 9999;
+      transition: opacity 0.6s ease-out;
     }
     .boot-spinner {
-      width: 40px; height: 40px; margin: 20px auto;
-      border: 3px solid #333; border-top-color: #0078d4;
-      border-radius: 50%; animation: spin 1s linear infinite;
+      width: 32px; height: 32px;
+      border: 2px solid rgba(148,163,184,0.2);
+      border-top-color: #3B82F6;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
+    .boot-title {
+      margin-top: 24px;
+      font-size: 15px;
+      font-weight: 600;
+      color: #F8FAFC;
+      letter-spacing: -0.3px;
+    }
+    .boot-log {
+      margin-top: 8px;
+      font-size: 12px;
+      color: #64748B;
+    }
   </style>
 </head>
 <body>
   <canvas id="webos-canvas"></canvas>
-  <div id="boot-status">
+  <div id="boot-overlay">
     <div class="boot-spinner"></div>
-    <p>Starting WebOS...</p>
+    <div class="boot-title">WebOS</div>
+    <div class="boot-log">Initializing...</div>
   </div>
 </body>
 </html>

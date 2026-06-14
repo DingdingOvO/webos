@@ -72,10 +72,29 @@ function markdownToHtml(md: string): string {
 
 const docsDir = path.join(process.cwd(), '..', '..', 'docs');
 
+function getAllDocFiles(dir: string, base: string = ''): string[] {
+  const results: string[] = [];
+  try {
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry.name);
+      const relPath = base ? `${base}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) {
+        results.push(...getAllDocFiles(fullPath, relPath));
+      } else if (entry.name.endsWith('.md')) {
+        results.push(relPath.replace('.md', ''));
+      }
+    }
+  } catch {
+    // Directory may not exist
+  }
+  return results;
+}
+
 export async function generateStaticParams() {
   try {
-    const files = fs.readdirSync(docsDir).filter(f => f.endsWith('.md'));
-    return files.map(f => ({ slug: f.replace('.md', '') }));
+    const slugs = getAllDocFiles(docsDir);
+    return slugs.map(slug => ({ slug }));
   } catch {
     return [];
   }

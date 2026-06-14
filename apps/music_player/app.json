@@ -1,0 +1,12 @@
+{
+  "name": "Music Player",
+  "id": "com.os.musicplayer",
+  "version": "0.0.1beta",
+  "description": "Audio player with playlist management",
+  "entry": "music_player.wex",
+  "icon": "/icons/musicplayer.png",
+  "category": "Multimedia",
+  "author": "WebOS Team",
+  "permissions": ["wm", "input", "fs", "audio"],
+  "dependencies": ["audio_server.Wdll"]
+}

@@ -1,20 +1,28 @@
 /**
  * WebOS Host - Main Entry Point
  * 
- * Bootstraps the WebOS runtime, loads the bootloader and kernel,
- * and starts the system.
+ * The launcher initializes WebGPU, loads C bootloader/kernel as WASM,
+ * and starts the desktop environment. Everything renders to a single
+ * full-screen canvas — no DOM elements for UI.
+ * 
+ * Boot chain: TS Launcher → C Bootloader → C Kernel → Login → Desktop
+ * 
+ * Version: 0.0.1beta
  */
 
 import { RuntimeBridge } from './runtime_bridge';
 import { DynamicLoader } from './dynamic_loader';
-import { ModuleKind, RuntimeConfig, DEFAULT_CONFIG } from './types';
+import { DesktopCompositor } from './compositor';
+import { DEFAULT_CONFIG, RuntimeConfig, BootPhase, DESIGN } from './types';
 
 class WebOSHost {
+  private config: RuntimeConfig;
   private bridge: RuntimeBridge;
   private loader: DynamicLoader;
-  private config: RuntimeConfig;
-  private bootStatus: HTMLElement | null = null;
+  private compositor: DesktopCompositor | null = null;
   private canvas: HTMLCanvasElement | null = null;
+  private bootOverlay: HTMLDivElement | null = null;
+  private phase: BootPhase = BootPhase.INIT;
 
   constructor(config: Partial<RuntimeConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
@@ -22,147 +30,182 @@ class WebOSHost {
     this.loader = new DynamicLoader(this.config.wasmPath);
   }
 
-  /** Initialize and boot the system */
   async boot(): Promise<void> {
-    this.bootStatus = document.getElementById('boot-status');
-    this.canvas = document.getElementById('webos-canvas') as HTMLCanvasElement;
-
-    this.log('Initializing WebOS runtime...');
+    this.canvas = document.getElementById(this.config.canvasId) as HTMLCanvasElement;
+    if (!this.canvas) {
+      throw new Error('Canvas element not found');
+    }
+    this.bootOverlay = document.getElementById('boot-overlay') as HTMLDivElement;
 
     try {
-      // Phase 1: Load bootloader
+      // Phase 1: Initialize WebGPU
+      this.setPhase(BootPhase.INIT);
+      this.log('Initializing WebGPU...');
+      await this.initGPU();
+
+      // Phase 2: Load bootloader
+      this.setPhase(BootPhase.BOOTLOADER);
       this.log('Loading bootloader...');
-      const bootloader = await this.loader.loadModule('bootloader.wasm');
-      this.log(`Bootloader loaded (type: ${bootloader.typeStr})`);
+      await this.loader.loadModule('bootloader.wasm');
 
-      // Phase 2: Initialize kernel
+      // Phase 3: Load kernel
+      this.setPhase(BootPhase.KERNEL);
       this.log('Loading kernel...');
-      const kernel = await this.loader.loadModule('kernel.wasm');
-      this.log(`Kernel loaded (type: ${kernel.typeStr})`);
-
-      // Phase 3: Instantiate kernel with runtime bridge imports
-      this.log('Starting kernel...');
+      const kernelModule = await this.loader.loadModule('kernel.wasm');
       const imports = this.bridge.getWasmImports();
       const kernelInstance = await this.loader.instantiateModule('kernel.wasm', imports);
 
-      // Call kernel entry point
-      if (kernelInstance.exports.main) {
-        (kernelInstance.exports.main as Function)();
-      } else if (kernelInstance.exports._start) {
-        (kernelInstance.exports._start as Function)();
+      // Call kernel entry
+      const entry = kernelInstance.exports.main || kernelInstance.exports._start;
+      if (entry) {
+        (entry as Function)();
       }
-
-      this.log('Kernel started successfully');
+      this.log('Kernel started');
 
       // Phase 4: Load drivers
+      this.setPhase(BootPhase.DRIVERS);
       this.log('Loading drivers...');
       await this.loadDrivers();
 
       // Phase 5: Load services
+      this.setPhase(BootPhase.SERVICES);
       this.log('Loading services...');
       await this.loadServices();
 
-      // Phase 6: Boot complete
-      this.log('Boot complete');
-      this.hideBootStatus();
+      // Phase 6: Login (skip for now, auto-login)
+      this.setPhase(BootPhase.LOGIN);
+      this.log('Starting login...');
+
+      // Phase 7: Desktop
+      this.setPhase(BootPhase.DESKTOP);
+      this.log('Starting desktop...');
+
+      // Hide boot overlay
+      this.hideBootOverlay();
 
       // Start render loop
       this.startRenderLoop();
 
+      this.setPhase(BootPhase.COMPLETE);
+      this.log('Boot complete');
+
     } catch (error) {
+      this.setPhase(BootPhase.FAILED);
       this.log(`Boot failed: ${error}`);
-      console.error('WebOS boot failed:', error);
-      if (this.bootStatus) {
-        this.bootStatus.innerHTML = `
-          <p style="color: #f44; font-size: 16px;">Boot Failed</p>
-          <p style="color: #888; font-size: 14px; margin-top: 8px;">${error}</p>
-        `;
-      }
+      console.error('[WebOS] Boot failed:', error);
+      this.showBootError(String(error));
     }
   }
 
-  /** Load all driver modules */
+  private async initGPU(): Promise<void> {
+    if (!navigator.gpu) {
+      throw new Error('WebGPU not supported. Please use a WebGPU-compatible browser.');
+    }
+
+    const adapter = await navigator.gpu.requestAdapter();
+    if (!adapter) {
+      throw new Error('No GPU adapter found.');
+    }
+
+    const device = await adapter.requestDevice();
+    device.lost.then((info) => {
+      console.error('[WebOS] GPU device lost:', info.message);
+    });
+
+    // Create compositor — it handles all rendering
+    this.compositor = new DesktopCompositor(this.canvas!, device);
+
+    this.log('WebGPU initialized');
+  }
+
   private async loadDrivers(): Promise<void> {
     const drivers = [
       'gpu_driver.Wdll',
+      'audio_driver.Wdll',
       'input_driver.Wdll',
       'storage_driver.Wdll',
       'network_driver.Wdll',
     ];
-
-    for (const driver of drivers) {
+    for (const name of drivers) {
       try {
-        const info = await this.loader.loadModule(driver);
-        this.log(`  Driver: ${driver} (${info.typeStr})`);
-      } catch (e) {
-        this.log(`  Driver ${driver}: not found (skipping)`);
+        await this.loader.loadModule(name);
+        this.log(`  ${name}: loaded`);
+      } catch {
+        this.log(`  ${name}: not found (skip)`);
       }
     }
   }
 
-  /** Load all service modules */
   private async loadServices(): Promise<void> {
     const services = [
-      'wm.Wdll',
       'fs_service.Wdll',
+      'audio_server.Wdll',
+      'wm.Wdll',
       'net_service.Wdll',
       'appstore.Wdll',
     ];
-
-    for (const service of services) {
+    for (const name of services) {
       try {
-        const info = await this.loader.loadModule(service);
-        this.log(`  Service: ${service} (${info.typeStr})`);
-      } catch (e) {
-        this.log(`  Service ${service}: not found (skipping)`);
+        await this.loader.loadModule(name);
+        this.log(`  ${name}: loaded`);
+      } catch {
+        this.log(`  ${name}: not found (skip)`);
       }
     }
   }
 
-  /** Log a message to the boot status display */
-  private log(message: string): void {
-    console.log(`[WebOS] ${message}`);
-    if (this.bootStatus) {
-      const p = this.bootStatus.querySelector('p');
-      if (p) {
-        p.textContent = message;
-      }
-    }
-  }
+  // ─── Render Loop ───
 
-  /** Hide the boot status overlay */
-  private hideBootStatus(): void {
-    if (this.bootStatus) {
-      this.bootStatus.style.transition = 'opacity 0.5s';
-      this.bootStatus.style.opacity = '0';
-      setTimeout(() => {
-        this.bootStatus?.remove();
-      }, 500);
-    }
-  }
-
-  /** Start the main render loop */
   private startRenderLoop(): void {
-    const render = () => {
-      // Render windows to the canvas
-      const windows = this.bridge.getAllWindows();
-      if (this.canvas && windows.length > 0) {
-        const ctx = this.canvas.getContext('2d');
-        if (ctx) {
-          ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-          for (const win of windows) {
-            const imageData = new ImageData(win.framebuffer, win.width, win.height);
-            ctx.putImageData(imageData, win.x, win.y);
-          }
-        }
-      }
-      requestAnimationFrame(render);
+    if (!this.compositor) return;
+
+    const frame = (time: number) => {
+      this.compositor!.render(time);
+      requestAnimationFrame(frame);
     };
-    requestAnimationFrame(render);
+    requestAnimationFrame(frame);
+  }
+
+  // ─── Boot UI ───
+
+  private setPhase(phase: BootPhase): void {
+    this.phase = phase;
+  }
+
+  private log(msg: string): void {
+    const timestamp = performance.now().toFixed(0).padStart(6, ' ');
+    console.log(`[WebOS ${timestamp}ms] ${msg}`);
+
+    if (this.bootOverlay) {
+      const logEl = this.bootOverlay.querySelector('.boot-log');
+      if (logEl) {
+        logEl.textContent = msg;
+      }
+    }
+  }
+
+  private hideBootOverlay(): void {
+    if (this.bootOverlay) {
+      this.bootOverlay.style.transition = 'opacity 0.6s ease-out';
+      this.bootOverlay.style.opacity = '0';
+      setTimeout(() => this.bootOverlay?.remove(), 600);
+    }
+  }
+
+  private showBootError(error: string): void {
+    if (this.bootOverlay) {
+      const spinner = this.bootOverlay.querySelector('.boot-spinner');
+      if (spinner) (spinner as HTMLElement).style.display = 'none';
+      const logEl = this.bootOverlay.querySelector('.boot-log');
+      if (logEl) {
+        logEl.innerHTML = `<span style="color:#EF4444">Boot Failed</span><br><span style="color:#94A3B8;font-size:13px">${error}</span>`;
+      }
+    }
   }
 }
 
-// Bootstrap
+// ─── Bootstrap ───
+
 window.addEventListener('DOMContentLoaded', () => {
   const host = new WebOSHost();
   host.boot();

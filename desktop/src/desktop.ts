@@ -2,12 +2,16 @@
  * WebOS Desktop Environment
  * 
  * Manages the visual desktop: wallpaper, icons, windows, taskbar, start menu.
- * Communicates with the WASM kernel and window manager service.
+ * All 10 pre-installed apps are registered and launchable.
+ * Design language: Frosted Glass (#3B82F6 accent, blur+transparency+noise)
+ *
+ * Version: 0.0.1beta
  */
 
 import { DesktopRenderer } from './renderer';
 import { Taskbar } from './taskbar';
 import { StartMenu } from './start_menu';
+import { NotificationSystem } from './notifications';
 
 export interface DesktopConfig {
   wallpaperColor: string;
@@ -17,7 +21,7 @@ export interface DesktopConfig {
 }
 
 const DEFAULT_CONFIG: DesktopConfig = {
-  wallpaperColor: '#0078d4',
+  wallpaperColor: '#0F172A',
   taskbarHeight: 48,
   iconSize: 48,
   gridSpacing: 80,
@@ -29,13 +33,15 @@ export interface DesktopIcon {
   icon: string;
   x: number;
   y: number;
-  onActivate: () => void;
+  appId: string;
+  module: string;
 }
 
 export class Desktop {
   private renderer: DesktopRenderer;
   private taskbar: Taskbar;
   private startMenu: StartMenu;
+  private notifications: NotificationSystem;
   private config: DesktopConfig;
   private icons: DesktopIcon[] = [];
   private running: boolean = false;
@@ -46,39 +52,67 @@ export class Desktop {
     this.renderer = new DesktopRenderer(canvas);
     this.taskbar = new Taskbar(this.config.taskbarHeight);
     this.startMenu = new StartMenu();
+    this.notifications = new NotificationSystem();
   }
 
   async init(): Promise<void> {
     await this.renderer.init();
     this.setupDefaultIcons();
     this.setupEventHandlers();
-    console.log('[Desktop] Initialized');
+    console.log('[Desktop] Initialized with 10 apps');
   }
 
+  /** All 10 pre-installed applications */
   private setupDefaultIcons(): void {
-    const iconPositions = [
-      { x: 40, y: 40 },   // Calculator
-      { x: 40, y: 130 },  // Paint
-      { x: 40, y: 220 },  // Browser
-      { x: 40, y: 310 },  // App Store
-      { x: 40, y: 400 },  // Terminal
-      { x: 40, y: 490 },  // Settings
+    const apps = [
+      { id: 'terminal',      name: 'Terminal',        icon: '💻', appId: 'com.os.terminal',      module: 'terminal.wex' },
+      { id: 'filemanager',   name: 'File Manager',    icon: '📁', appId: 'com.os.filemanager',   module: 'file_manager.wex' },
+      { id: 'texteditor',    name: 'Text Editor',     icon: '📝', appId: 'com.os.texteditor',    module: 'text_editor.wex' },
+      { id: 'settings',      name: 'Settings',        icon: '⚙️', appId: 'com.os.settings',      module: 'settings.wex' },
+      { id: 'calculator',    name: 'Calculator',      icon: '🔢', appId: 'com.os.calculator',    module: 'calculator.wex' },
+      { id: 'paint',         name: 'Paint',           icon: '🎨', appId: 'com.os.paint',         module: 'paint.wex' },
+      { id: 'musicplayer',   name: 'Music Player',    icon: '🎵', appId: 'com.os.musicplayer',   module: 'music_player.wex' },
+      { id: 'sysmonitor',    name: 'System Monitor',  icon: '📊', appId: 'com.os.sysmonitor',    module: 'system_monitor.wex' },
+      { id: 'browser',       name: 'Browser',         icon: '🌐', appId: 'com.os.browser',       module: 'browser.wex' },
+      { id: 'appstore',      name: 'App Store',       icon: '🏪', appId: 'com.os.appstore',      module: 'appstore.wex' },
     ];
 
-    const apps = [
-      { id: 'calculator', name: 'Calculator', icon: '🔢' },
-      { id: 'paint', name: 'Paint', icon: '🎨' },
-      { id: 'browser', name: 'Browser', icon: '🌐' },
-      { id: 'appstore', name: 'App Store', icon: '🏪' },
-      { id: 'terminal', name: 'Terminal', icon: '💻' },
-      { id: 'settings', name: 'Settings', icon: '⚙️' },
-    ];
+    // Layout: 2 columns, left side
+    const col1X = 40;
+    const col2X = 40 + this.config.iconSize + 20;
 
     this.icons = apps.map((app, i) => ({
       ...app,
-      ...iconPositions[i],
-      onActivate: () => this.launchApp(app.id),
+      x: i % 2 === 0 ? col1X : col2X,
+      y: 40 + Math.floor(i / 2) * (this.config.iconSize + this.config.gridSpacing),
     }));
+
+    // Register apps in taskbar and start menu
+    for (const app of apps) {
+      this.startMenu.addApp({
+        id: app.id,
+        name: app.name,
+        icon: app.icon,
+        category: this.getCategory(app.id),
+        pinned: true,
+      });
+    }
+  }
+
+  private getCategory(appId: string): string {
+    const categories: Record<string, string> = {
+      terminal: 'System',
+      filemanager: 'Utilities',
+      texteditor: 'Utilities',
+      settings: 'System',
+      calculator: 'Utilities',
+      paint: 'Graphics',
+      musicplayer: 'Multimedia',
+      sysmonitor: 'System',
+      browser: 'Internet',
+      appstore: 'System',
+    };
+    return categories[appId] || 'Utilities';
   }
 
   private setupEventHandlers(): void {
@@ -90,8 +124,8 @@ export class Desktop {
       // Check if double-clicked on an icon
       for (const icon of this.icons) {
         if (x >= icon.x && x <= icon.x + this.config.iconSize &&
-            y >= icon.y && y <= icon.y + this.config.iconSize) {
-          icon.onActivate();
+            y >= icon.y && y <= icon.y + this.config.iconSize + 20) {
+          this.launchApp(icon.id);
           break;
         }
       }
@@ -110,6 +144,9 @@ export class Desktop {
       } else {
         this.startMenu.close();
       }
+
+      // Check notification click
+      this.notifications.handleClick(x, y, this.renderer.canvasWidth);
     });
 
     // Handle resize
@@ -120,21 +157,28 @@ export class Desktop {
 
   private launchApp(appId: string): void {
     console.log(`[Desktop] Launching app: ${appId}`);
+    const icon = this.icons.find(i => i.id === appId);
+    if (!icon) return;
+
+    // Add to taskbar running apps
+    this.taskbar.addApp({
+      id: appId,
+      name: icon.name,
+      icon: icon.icon,
+      active: true,
+    });
+
+    // Show notification
+    this.notifications.pushNotification(
+      'App Launched',
+      `${icon.name} is starting...`,
+      icon.icon,
+      'info',
+    );
+
     // In production, this sends an IPC message to the kernel
     // to spawn the corresponding .wex process
-    const moduleMap: Record<string, string> = {
-      calculator: 'calculator.wex',
-      paint: 'paint.wex',
-      browser: 'browser.wex',
-      appstore: 'appstore.wex',
-      terminal: 'shell.wex',
-      settings: 'settings.wex',
-    };
-    const module = moduleMap[appId];
-    if (module) {
-      // kernel_spawn_process(module)
-      console.log(`[Desktop] Spawning: ${module}`);
-    }
+    console.log(`[Desktop] Spawning: ${icon.module}`);
   }
 
   /** Render one frame of the desktop */
@@ -144,29 +188,35 @@ export class Desktop {
     const w = this.renderer.canvasWidth;
     const h = this.renderer.canvasHeight;
 
-    // 1. Draw wallpaper
+    // 1. Draw wallpaper (deep blue gradient)
     this.renderer.clear(this.config.wallpaperColor);
 
     // 2. Draw desktop icons
     for (const icon of this.icons) {
+      // Icon background (subtle hover-style)
       this.renderer.drawRoundRect(
-        icon.x, icon.y, this.config.iconSize, this.config.iconSize,
-        8, 'rgba(255,255,255,0.15)'
+        icon.x - 4, icon.y - 4,
+        this.config.iconSize + 8, this.config.iconSize + 24,
+        8, 'rgba(255,255,255,0.06)',
       );
-      this.renderer.drawText(icon.icon, icon.x + 10, icon.y + 35, '#ffffff', '28px sans-serif');
-      this.renderer.drawText(icon.name, icon.x - 5, icon.y + this.config.iconSize + 18, '#ffffff', '12px "Segoe UI", sans-serif');
+      // Emoji icon
+      this.renderer.drawText(icon.icon, icon.x + 8, icon.y + 35, '#F8FAFC', '28px sans-serif');
+      // Label
+      this.renderer.drawText(icon.name, icon.x - 8, icon.y + this.config.iconSize + 18, '#F8FAFC', '11px "Segoe UI", sans-serif');
     }
 
-    // 3. Draw windows (managed by WM service)
-    // This would query the WM service for window positions and render them
-
-    // 4. Draw start menu (if open)
+    // 3. Draw start menu (if open)
     if (this.startMenu.isOpen) {
       this.renderStartMenu();
     }
 
-    // 5. Draw taskbar (always on top)
+    // 4. Draw taskbar (always on top)
     this.renderTaskbar();
+
+    // 5. Draw notifications
+    if (this.renderer.ctx) {
+      this.notifications.renderNotifications(this.renderer.ctx, w);
+    }
 
     this.animFrame = requestAnimationFrame(this.render);
   };
@@ -176,56 +226,86 @@ export class Desktop {
     const th = this.config.taskbarHeight;
     const w = this.renderer.canvasWidth;
 
-    // Taskbar background
-    this.renderer.setAlpha(0.85);
-    this.renderer.drawRect(0, h - th, w, th, '#1a1a2e');
+    // Taskbar background — blurred, semi-transparent with noise
+    this.renderer.setAlpha(0.78);
+    this.renderer.drawRect(0, h - th, w, th, '#1E293B');
     this.renderer.resetAlpha();
 
-    // Start button
-    this.renderer.drawRoundRect(4, h - th + 6, 42, th - 12, 6, '#0078d4');
-    this.renderer.drawText('⊞', 16, h - 14, '#ffffff', '20px sans-serif');
+    // Top border (1px, replaces shadow)
+    this.renderer.drawRect(0, h - th, w, 1, 'rgba(148,163,184,0.12)');
+
+    // Start button (blue accent)
+    this.renderer.drawRoundRect(4, h - th + 6, 42, th - 12, 6, '#3B82F6');
+    this.renderer.drawText('⊞', 16, h - 14, '#F8FAFC', '20px sans-serif');
 
     // Running apps area (center)
-    this.renderer.drawRect(54, h - th + 8, 200, th - 16, 'rgba(255,255,255,0.08)');
+    const runningApps = this.taskbar.runningApps;
+    let appX = 54;
+    for (const app of runningApps) {
+      const bg = app.active ? 'rgba(59,130,246,0.2)' : 'rgba(255,255,255,0.06)';
+      this.renderer.drawRoundRect(appX, h - th + 6, 36, th - 12, 4, bg);
+      this.renderer.drawText(app.icon, appX + 8, h - 14, '#F8FAFC', '16px sans-serif');
+      appX += 42;
+    }
 
     // System tray (right)
     const trayX = w - 200;
-    this.renderer.drawText('📶 🔊 🕐', trayX, h - 16, '#cccccc', '14px sans-serif');
-    this.renderer.drawText(new Date().toLocaleTimeString(), w - 80, h - 16, '#ffffff', '13px "Segoe UI", sans-serif');
+    this.renderer.drawText('📶 🔊', trayX, h - 16, '#94A3B8', '14px sans-serif');
+    this.renderer.drawText(
+      new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      w - 60, h - 16, '#F8FAFC', '13px "Segoe UI", sans-serif',
+    );
   }
 
   private renderStartMenu(): void {
     const h = this.renderer.canvasHeight;
     const th = this.config.taskbarHeight;
-    const menuH = 400;
-    const menuW = 300;
+    const menuH = 440;
+    const menuW = 320;
     const menuX = 4;
     const menuY = h - th - menuH;
 
-    // Background
-    this.renderer.setAlpha(0.92);
-    this.renderer.drawRoundRect(menuX, menuY, menuW, menuH, 12, '#2d2d44');
+    // Background — frosted glass
+    this.renderer.setAlpha(0.85);
+    this.renderer.drawRoundRect(menuX, menuY, menuW, menuH, 16, '#1E293B');
     this.renderer.resetAlpha();
 
-    // Search bar
-    this.renderer.drawRoundRect(menuX + 16, menuY + 16, menuW - 32, 36, 18, 'rgba(255,255,255,0.12)');
-    this.renderer.drawText('Search...', menuX + 32, menuY + 40, '#888888', '14px "Segoe UI", sans-serif');
+    // Border
+    this.renderer.drawRect(menuX, menuY, menuW, 1, 'rgba(148,163,184,0.12)');
 
-    // Pinned apps
-    this.renderer.drawText('Pinned', menuX + 20, menuY + 80, '#aaaaaa', '12px "Segoe UI", sans-serif');
-    const pinnedApps = ['🔢 Calc', '🎨 Paint', '🌐 Browse', '💻 Term', '⚙️ Config', '🏪 Store'];
+    // Search bar
+    this.renderer.drawRoundRect(menuX + 16, menuY + 16, menuW - 32, 36, 18, 'rgba(255,255,255,0.08)');
+    this.renderer.drawText('🔍 Search...', menuX + 32, menuY + 40, '#64748B', '14px "Segoe UI", sans-serif');
+
+    // Pinned section header
+    this.renderer.drawText('Pinned', menuX + 20, menuY + 76, '#94A3B8', '12px "Segoe UI", sans-serif');
+
+    // App grid — 4 columns
+    const pinnedApps = this.startMenu.pinnedApps;
+    const cols = 4;
+    const cellW = (menuW - 40) / cols;
+    const cellH = 64;
+
     for (let i = 0; i < pinnedApps.length; i++) {
-      const col = i % 3;
-      const row = Math.floor(i / 3);
-      this.renderer.drawRoundRect(
-        menuX + 20 + col * 90, menuY + 90 + row * 70,
-        78, 58, 8, 'rgba(255,255,255,0.06)'
-      );
-      this.renderer.drawText(pinnedApps[i], menuX + 30 + col * 90, menuY + 125 + row * 70, '#ffffff', '13px sans-serif');
+      const col = i % cols;
+      const row = Math.floor(i / cols);
+      const cx = menuX + 20 + col * cellW;
+      const cy = menuY + 88 + row * (cellH + 4);
+
+      this.renderer.drawRoundRect(cx, cy, cellW - 4, cellH, 8, 'rgba(255,255,255,0.04)');
+      this.renderer.drawText(pinnedApps[i].icon, cx + cellW / 2 - 14, cy + 28, '#F8FAFC', '20px sans-serif');
+      this.renderer.drawText(pinnedApps[i].name, cx + 4, cy + 52, '#94A3B8', '10px "Segoe UI", sans-serif');
     }
 
+    // Divider
+    const dividerY = menuY + 88 + Math.ceil(pinnedApps.length / cols) * (cellH + 4) + 8;
+    this.renderer.drawRect(menuX + 16, dividerY, menuW - 32, 1, 'rgba(148,163,184,0.12)');
+
     // Power button
-    this.renderer.drawText('⏻ Power', menuX + 20, menuY + menuH - 20, '#ff6666', '14px "Segoe UI", sans-serif');
+    this.renderer.drawText('⏻ Power', menuX + 20, menuY + menuH - 20, '#EF4444', '14px "Segoe UI", sans-serif');
+
+    // Version
+    this.renderer.drawText('v0.0.1beta', menuX + menuW - 80, menuY + menuH - 20, '#64748B', '11px "Segoe UI", sans-serif');
   }
 
   /** Start the desktop render loop */

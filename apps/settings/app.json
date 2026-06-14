@@ -1,0 +1,12 @@
+{
+  "name": "Settings",
+  "id": "com.os.settings",
+  "version": "0.0.1beta",
+  "description": "System settings and preferences",
+  "entry": "settings.wex",
+  "icon": "/icons/settings.png",
+  "category": "System",
+  "author": "WebOS Team",
+  "permissions": ["wm", "input", "fs"],
+  "dependencies": []
+}

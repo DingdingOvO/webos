@@ -1,0 +1,12 @@
+{
+  "name": "File Manager",
+  "id": "com.os.filemanager",
+  "version": "0.0.1beta",
+  "description": "Graphical file manager for browsing and managing files",
+  "entry": "file_manager.wex",
+  "icon": "/icons/filemanager.png",
+  "category": "Utilities",
+  "author": "WebOS Team",
+  "permissions": ["wm", "input", "fs"],
+  "dependencies": []
+}

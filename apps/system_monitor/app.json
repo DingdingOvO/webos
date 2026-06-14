@@ -1,0 +1,12 @@
+{
+  "name": "System Monitor",
+  "id": "com.os.sysmonitor",
+  "version": "0.0.1beta",
+  "description": "Real-time system resource monitor",
+  "entry": "system_monitor.wex",
+  "icon": "/icons/sysmonitor.png",
+  "category": "System",
+  "author": "WebOS Team",
+  "permissions": ["wm", "input", "process"],
+  "dependencies": []
+}

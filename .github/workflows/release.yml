@@ -130,7 +130,7 @@ jobs:
           cd release && tar czf webos-0.0.1beta.tar.gz webos-0.0.1beta
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           name: WebOS ${{ github.ref_name }}
           body: |
